@@ -1,0 +1,512 @@
+//
+//  AppDelegate.m
+//  10-7
+//
+//  Created by zhaoyaqun on 15/10/7.
+//  Copyright (c) 2015年 zhaoyaqun. All rights reserved.
+//
+
+#import "AppDelegate.h"
+#import "Cache.h"
+#import <SMS_SDK/SMSSDK.h>
+#import "MyURLProtocol.h"
+
+#import "Pingpp.h"
+#import "SrocketViewController.h"
+#import "AppRequest.h"
+#import "SaveData.h"
+#import "Unit.h"
+#import "Notice.h"
+#import <AVFoundation/AVFoundation.h>
+#import "Notice.h"
+#import "CrashExceptioinCatcher.h"
+#import "Config.h"
+#import "CheckNetwork.h"
+#import <MediaPlayer/MediaPlayer.h>
+#import "Service.h"
+#import <BaiduMapAPI_Base/BMKMapManager.h>
+#import<BaiduMapAPI_Base/BMKBaseComponent.h>
+#import "UMessage.h"
+#import <UserNotifications/UserNotifications.h>
+#import "Unit.h"
+#import "Sounds.h"
+
+#import "WXApi.h"
+#import <TencentOpenAPI/TencentOAuth.h>
+#import "WeiboSDK.h"
+
+//分享
+#import <UMSocialCore/UMSocialCore.h>
+
+#import "WXApi.h"
+#import "oaythClass.h"
+
+NSInteger typeIntrger=0;
+
+@interface AppDelegate ()<WXApiDelegate,WeiboSDKDelegate>
+
+@end
+
+@implementation AppDelegate
+{
+    NSTimer*_timer;
+    NSInteger _count;
+    BMKMapManager* _mapManager;
+
+}
+
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    //****TEST************
+
+
+    //*****TEST End********
+    
+    self.window=[[UIWindow alloc]initWithFrame:[UIScreen mainScreen].bounds];
+    [self.window makeKeyAndVisible];
+    self.window.backgroundColor=[UIColor whiteColor];
+    self.window.userInteractionEnabled=YES;
+    [[UIApplication sharedApplication]setStatusBarHidden:NO];
+    [[UIApplication sharedApplication]setStatusBarStyle:UIStatusBarStyleLightContent];
+
+    //预设一个rootViewController
+    UIViewController*myvc=[[UIViewController alloc]initWithNibName:nil bundle:nil];
+    self.window.rootViewController=myvc;
+    //新增点击通知栏方法
+    if (launchOptions.count!=0) {
+        NSDictionary *remoteNotification = [launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey];
+        NSMutableDictionary*dic=[NSMutableDictionary dictionaryWithDictionary:remoteNotification];
+        [[ViewController viewControllerManager]launchOptions:dic];
+    }
+    
+    [self getView];
+    
+    [[UIApplication sharedApplication]cancelAllLocalNotifications];
+    [UIApplication  sharedApplication].applicationIconBadgeNumber=0;
+    
+    [CrashExceptioinCatcher startCrashExceptionCatah];
+    [NSURLProtocol  registerClass:[MyURLProtocol class]];
+    
+        //3.0新增
+    [WXApi registerApp:[Config GetUMWXKey] ];
+    [WeiboSDK registerApp:[Config GetUMSinaKey]];
+    [WeiboSDK enableDebugMode:NO];
+    return YES;
+}
+
+-(void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
+{
+
+        //友盟推送点击
+    NSMutableDictionary*dic=[NSMutableDictionary dictionaryWithDictionary:userInfo];
+        //注册一个推送通知
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"myNotifications" object:dic];
+}
+
+
+
+
+- (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken
+{
+    // 1.2.7版本开始不需要用户再手动注册devicetoken，SDK会自动注册
+    [UMessage registerDeviceToken:deviceToken];
+    NSString *deviceTokenSt = [[[[deviceToken description]
+                                 stringByReplacingOccurrencesOfString:@"<" withString:@""]
+                                stringByReplacingOccurrencesOfString:@">" withString:@""]
+                               stringByReplacingOccurrencesOfString:@" " withString:@""];
+      
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"deviceTokenNotification" object:deviceTokenSt];
+    [[NSNotificationCenter defaultCenter]postNotificationName:@"deviceTokenNotification" object:deviceTokenSt];
+    //本地存一个deviceToken,用于判断是否返回过deviceToken
+    [SaveData setData:@"deviceToken" andValue:deviceTokenSt];
+}
+
+
+-(void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification
+{
+    //本地推送点击
+    NSMutableDictionary*data=[NSMutableDictionary dictionaryWithDictionary:notification.userInfo];
+    [SaveData setData:@"EventClickData" andValue:[Unit FormatJSONObject:data]];
+    [[ViewController viewControllerManager] excode:@"AppRequest.Event()"];
+
+}
+
+- (void)applicationDidEnterBackground:(UIApplication *)application
+{
+    [[UIApplication sharedApplication] beginReceivingRemoteControlEvents];
+    [SrocketViewController AppStop];
+    [[ViewController viewControllerManager] excode:@"AppRequest.Background()"];
+    [UIApplication  sharedApplication].applicationIconBadgeNumber=0;
+    UIApplication*app=[UIApplication sharedApplication];
+    __block  UIBackgroundTaskIdentifier bgTask;
+    
+    bgTask=[app beginBackgroundTaskWithExpirationHandler:^{
+       
+        dispatch_async(dispatch_get_main_queue(), ^{
+           
+            if (bgTask !=UIBackgroundTaskInvalid) {
+                bgTask=UIBackgroundTaskInvalid;
+            }
+            
+        });
+    }];
+   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+       dispatch_async(dispatch_get_main_queue(), ^{
+           if (bgTask !=UIBackgroundTaskInvalid) {
+               bgTask=UIBackgroundTaskInvalid;
+           }
+       });
+   });
+
+    //执行后台方法
+    self.background_task=[application beginBackgroundTaskWithExpirationHandler:^{
+              [self background];
+    }];
+    if (self.background_task==UIBackgroundTaskInvalid) {
+        return;
+    }
+    self.myTimer=[NSTimer scheduledTimerWithTimeInterval:5.0f target:self selector:@selector(timerMethob:) userInfo:nil  repeats:YES];
+}
+- (void)applicationWillEnterForeground:(UIApplication *)application
+{
+    [[UIApplication sharedApplication] clearKeepAliveTimeout];
+    [self.myTimer invalidate];
+    [[ViewController viewControllerManager] excode:@"AppRequest.Foreground()"];
+}
+
+- (void)applicationWillTerminate:(UIApplication *)application {
+    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
+    //进程被干掉了
+    NSLog(@"程序退出");
+
+}
+
+
+// iOS 8 及以下请用这个
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation {
+    NSLog(@"ios8");
+    return  [self openUrl:url optis:sourceApplication];
+}
+
+
+// iOS 9 以上请用这个
+- (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary *)options {
+    NSLog(@"ios9");
+    return  [self openUrl:url optis:options];
+}
+//友盟和原生冲突
+-(BOOL)openUrl:(NSURL *)url optis:(id)optis ;{
+    //0 其他 1 微信 2 微博 3  qq
+    int type=[[oaythClass getoaythClass]returnBoolUrl];
+    
+    switch (type) {
+        case 1:
+            [[oaythClass getoaythClass]removeBoolUrl];
+            return  [WXApi handleOpenURL:url delegate:self];
+            break;
+        case 2:
+            [[oaythClass getoaythClass]removeBoolUrl];
+            return  [WeiboSDK handleOpenURL:url delegate:self];
+            break;
+        case 3:
+            [[oaythClass getoaythClass]removeBoolUrl];
+            return  [TencentOAuth HandleOpenURL:url];
+            break;
+        default:
+            if (![[UMSocialManager defaultManager]handleOpenURL:url]) {
+                [Pingpp handleOpenURL:url withCompletion:nil];
+            }
+            return [[UMSocialManager  defaultManager]handleOpenURL:url];
+            break;
+    }
+    return [[UMSocialManager  defaultManager]handleOpenURL:url];
+
+}
+
+
+
+
+-(void)applicationDidReceiveMemoryWarning:(UIApplication *)application
+{
+    NSLog(@"内存警告");
+    [SaveData setLastModified:[Unit GetMS]];
+    [[NSURLCache sharedURLCache] removeAllCachedResponses];
+}
+
+
+//IPV4视图
+-(void)getView
+{
+
+    self.view = [ViewController viewControllerManager];
+    //先把根视图给下
+    self.window.rootViewController=self.view;
+
+    //是否注册
+    NSString*test=[SaveData getData:@"deviceToken"];
+    if ([test isEqualToString:@""]) {
+        //没有被注册，不启动
+        [AppDelegate UmengPush:false];
+    }else{
+        [AppDelegate UmengPush:true];
+    }
+
+    
+     //短信验证码
+    //友盟分享
+    [[UMSocialManager defaultManager]setUmSocialAppkey:[Config GetUMKey]];
+
+     //    //新浪微博
+    [[UMSocialManager defaultManager]setPlaform:UMSocialPlatformType_Sina appKey:[Config GetUMSinaKey] appSecret:[Config GetUMSinaSecret] redirectURL:[Config GetUMSinaUrl]];
+    
+    //微信聊天
+    [[UMSocialManager defaultManager]setPlaform:UMSocialPlatformType_WechatSession appKey:[Config GetUMWXKey] appSecret:[Config GetUMWXSecret] redirectURL:[Config GetUMWXUrl]];
+    //微信朋友圈
+    [[UMSocialManager defaultManager]setPlaform:UMSocialPlatformType_WechatTimeLine appKey:[Config GetUMWXKey] appSecret:[Config GetUMWXSecret] redirectURL:[Config GetUMWXUrl]];
+    
+    //设置手机QQ 的AppId，Appkey，和分享URL
+    [[UMSocialManager defaultManager]setPlaform:UMSocialPlatformType_QQ appKey:[Config GetUMQQID] appSecret:nil redirectURL:[Config GetUMQQUrl]];
+    _mapManager = [[BMKMapManager alloc]init];
+    
+    [_mapManager start:[Config GetBaiDuKey]  generalDelegate:nil];
+
+
+
+    //设置一个检测截图的通知
+    [[NSNotificationCenter defaultCenter]postNotificationName:UIApplicationUserDidTakeScreenshotNotification object:nil];
+
+    if ([[UIApplication sharedApplication]currentUserNotificationSettings].types!=UIUserNotificationTypeNone) {
+        
+        NSLog(@"我已经开启通知");
+        
+    }else{
+        
+        NSLog(@"我没有开启通知");
+        [[UIApplication sharedApplication]registerUserNotificationSettings:[UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeAlert|UIUserNotificationTypeBadge|UIUserNotificationTypeSound  categories:nil]];
+    }
+    
+}
+
+//标记指定的后台任务完成
+-(void)background
+{
+    [_timer setFireDate:[NSDate distantPast]];
+    _count=0;
+    dispatch_queue_t mainQueue = dispatch_get_main_queue();
+    AppDelegate *weakSelf = self;
+    dispatch_async(mainQueue, ^(void) {
+        AppDelegate *strongSelf = weakSelf;
+        if (strongSelf != nil){
+            [strongSelf.myTimer invalidate];// 停止定时器
+                // 每个对 beginBackgroundTaskWithExpirationHandler:方法的调用,必须要相应的调用 endBackgroundTask:方法。这样，来告诉应用程序你已经执行完成了。
+                // 也就是说,我们向 iOS 要更多时间来完成一个任务,那么我们必须告诉 iOS 你什么时候能完成那个任务。
+                // 也就是要告诉应用程序：“好借好还”嘛。
+                // 标记指定的后台任务完成
+            [[UIApplication sharedApplication] endBackgroundTask:self.background_task   ];
+                // 销毁后台任务标识符
+            strongSelf.background_task = UIBackgroundTaskInvalid;
+          
+            NSLog(@"fjdksnajkfndkjsnfdkjvnkjdfnbvjkvfdjbvdfalvfdjkbvjdf");
+        }
+    });
+    
+}
+//后台方法
+-(void)timerMethob:(NSTimer*)paramSender
+{
+        // backgroundTimeRemaining 属性包含了程序留给的我们的时间
+    NSTimeInterval backgroundTimeRemaining =[[UIApplication sharedApplication] backgroundTimeRemaining];
+    if (backgroundTimeRemaining == DBL_MAX){
+        NSLog(@"Background Time Remaining = Undetermined");
+    } else {
+        NSLog(@"Background Time Remaining = %.02f Seconds", backgroundTimeRemaining);
+      
+    }
+    
+}
+
+
+//执行友盟注册
++(void)UmengPush:(bool)test
+{
+    if (test){
+        [UMessage startWithAppkey:[Config GetUmengPushKey] launchOptions:nil];
+        [UMessage registerForRemoteNotifications];
+        float System=[[[UIDevice currentDevice] systemVersion] floatValue];
+        if (System>10.0) {
+            UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+            center.delegate=[[AppDelegate alloc]init];
+            UNAuthorizationOptions types10=UNAuthorizationOptionBadge|  UNAuthorizationOptionAlert|UNAuthorizationOptionSound;
+            [center requestAuthorizationWithOptions:types10     completionHandler:^(BOOL granted, NSError * _Nullable error) {
+            }];
+        }
+    }
+}
+-(void)dealloc
+{
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"deviceToken" object:nil];
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"myNotifications" object:nil];
+    [super dealloc];
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//微信
+-(void)onResp:(BaseResp *)resp
+{
+    NSString*success=@"";
+    NSString*message=@"";
+    if ([resp isKindOfClass:[SendAuthResp class]]) {
+        switch (resp.errCode) {
+            case 0:
+                success=@"success";
+                break;
+            case -2:
+                success=@"cancel";
+                message=@"用户取消授权";
+                break;
+            default:
+                success=@"fail";
+                message=@"授权失败";
+                break;
+        }
+    }
+    
+    if ([success isEqualToString:@"success"]) {
+        SendAuthResp *temp = (SendAuthResp *)resp;
+
+        NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://api.weixin.qq.com/sns/oauth2/access_token?appid=%@&secret=%@&code=%@&grant_type=authorization_code",[Config GetUMWXKey],[Config GetUMWXSecret],temp.code]];
+            NSURLRequest *request =[NSURLRequest requestWithURL:url];
+            NSURLSession *session = [NSURLSession sharedSession];
+     
+            NSURLSessionDataTask *sessionDataTask = [session dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+                
+                if (error) {
+                    [[oaythClass getoaythClass] returndic:nil Success:@"fail" Message:@"请求失败" Notification:@"oauthWeixinNotification"];
+                    return;
+                }
+                
+                
+                NSMutableDictionary*dic=[[NSMutableDictionary alloc]init];
+                NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:(NSJSONReadingMutableLeaves) error:nil];
+                //数据
+                [Unit setDic:dic key:@"access_token" value:[dict objectForKey:@"access_token"]];
+                [Unit setDic:dic key:@"openid" value:[dict objectForKey:@"openid"]];
+                [Unit setDic:dic key:@"refresh_token" value:[dict objectForKey:@"refresh_token"]];
+                //微信返回过期时间为秒
+                [Unit setDic:dic key:@"expires_in" value:[NSNumber numberWithLong:[Unit GetMS]+[[dict objectForKey:@"expires_in"]longValue]]];
+                [Unit setDic:dic key:@"unionid" value:[dict objectForKey:@"unionid"]];
+                
+                [Unit setDic:dic key:@"AllData" value:dict];
+   
+  
+        
+                [[oaythClass getoaythClass] returndic:dic Success:success Message:message Notification:@"oauthWeixinNotification"];
+            }];
+            [sessionDataTask resume];
+    }else{
+        [[oaythClass getoaythClass] returndic:nil Success:success Message:message Notification:@"oauthWeixinNotification"];
+    }
+  
+}
+
+
+- (void)didReceiveWeiboRequest:(WBBaseRequest *)request;
+{
+   
+}
+/**
+ 收到一个来自微博客户端程序的响应
+ 
+ 收到微博的响应后，第三方应用可以通过响应类型、响应的数据和 WBBaseResponse.userInfo 中的数据完成自己的功能
+ @param response 具体的响应对象
+ */
+- (void)didReceiveWeiboResponse:(WBBaseResponse *)response;
+{
+    NSString*success=@"";
+    NSString*message=@"";
+    if ([response isKindOfClass:WBAuthorizeResponse.class]) {
+        switch (response.statusCode) {
+            case 0:
+                success=@"success";
+                break;
+            case -1:
+                success=@"cancel";
+                message=@"用户取消授权";
+                break;
+ 
+            default:
+                success=@"fail";
+                message=@"授权失败";
+                break;
+        }
+    }
+    NSMutableDictionary*dic=[[NSMutableDictionary alloc]init];
+    if ([success isEqualToString:@"success"]) {
+        WBAuthorizeResponse*resp=(WBAuthorizeResponse*)response;
+        //数据
+        [Unit setDic:dic key:@"access_token" value:resp.accessToken];
+        [Unit setDic:dic key:@"userid" value:resp.userID];
+        [Unit setDic:dic key:@"refresh_token" value:resp.refreshToken];
+        [Unit setDic:dic key:@"expires" value:[NSNumber numberWithLongLong:[Unit longLongFromDate:resp.expirationDate]]];
+        [Unit setDic:dic key:@"AllData" value:@""];
+       
+    }
+    [[oaythClass getoaythClass] returndic:dic Success:success Message:message Notification:@"oauthWeiboNotification"];
+   
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@end

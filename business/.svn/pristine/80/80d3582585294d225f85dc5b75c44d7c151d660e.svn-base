@@ -1,0 +1,328 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<title>App静态启动页</title>
+<style>
+/*
+本页面应该和文件夹内所有文件拷进app内，并且作为app打开第一页，地址：BaseUrl+"/app/init/init.html"，将/app/init/内资源访问在读取缓存失败情况下全部映射为app内的资源，如果不拷贝直接访问服务器也可以
+
+功能：
+友好转向服务器端初始化页面(万一网络没打开...)，由服务器控制启动时要什么画面
+应用内页面加载失败时显示错误页面，地址#error=encdoeURI("{message:'',url:''}")
+向内部传递参数，地址#预定义好的参数，如#event=encdoeURI(args)
+*/
+html,body{
+	height:100%;
+	margin:0;
+	padding:0;
+	font:14px/20px Arial,Helvetica,sans-serif;
+	-webkit-tap-highlight-color:rgba(0,0,0,0);
+	color:#fff;
+}
+img{
+	border:none;
+}
+
+.first,.fail{
+	display:none;
+	position:absolute;
+	width:100%;
+	top:50%;
+	text-align:center;
+}
+
+
+.first{
+	margin-top:-50px;
+}
+.first .tips{
+	display:inline-block;
+	line-height:50px;
+	margin-left:20px;
+}
+.first .loader{
+	display:inline-block;
+	vertical-align:middle;
+	margin-left:-30px;
+	width:50px;
+	height:50px;
+	border:5px solid rgba(255, 255, 255, 0.2);
+	border-left-color:#fff;
+	-webkit-border-radius:100%;
+	-webkit-animation:load 1s infinite linear;
+}
+@-webkit-keyframes load{
+	0%{-webkit-transform:rotate(0deg);}
+	100%{-webkit-transform:rotate(360deg);}
+}
+
+
+.fail{
+	margin-top:-100px;
+}
+.fail .img img{
+	height:80px;
+}
+.fail .tips{
+	margin-top:20px;
+}
+.fail .reload{
+	margin-top:20px;
+}
+.fail .reloadBtn{
+	display:inline-block;
+	text-align:center;
+	font-size:16px;
+	line-height:35px;
+	
+	padding:0 25px;
+	border-radius:4px;
+	background:#bbb;
+	color:#fff;
+}
+.fail .reloadBtn:active{
+	background:#ddd;
+}
+
+.iframes{
+	width:0;
+	height:0;
+	overflow:hidden;
+}
+</style>
+</head>
+
+<body>
+	<div class="first">
+		<div class="loader"></div>
+		<span class="tips"></span>
+	</div>
+	<div class="fail">
+		<div class="img"><img /></div>
+		<div class="tips"></div>
+		<div class="reload"><div class="reloadBtn">重试</div></div>
+	</div>
+	<div class="iframes">
+		<iframe class="initCache"></iframe>
+	</div>
+
+<script>
+var PageIdentify="app.init.init";
+var thisUrl="/app/init/init.html";
+var defBG="#32b77d";
+if(/From\/Business/i.test(navigator.userAgent)){
+	defBG="#736aed";
+};
+
+var firstElem=document.querySelector(".first");
+var failElem=document.querySelector(".fail");
+var initCache=document.querySelector(".initCache");
+
+var isUpdate=/AppCache=UPDATE/.test(location.href);
+var updateSuccess=false;
+var updateParam="";
+if(isUpdate){
+	//更新本页面资源
+	console.log("IFrame UpdateCache "+PageIdentify);
+	updateParam="?AppCache=UPDATE";
+};
+
+//更新图片
+document.querySelector(".fail .img img").src='wifi_off.png'+updateParam;
+
+function loadJs(True,False){
+	var commJs=document.createElement("script");
+	var isTimeout=false;
+	commJs.onload=function(){
+			if(isTimeout){
+				return;
+			};
+			clearTimeout(tiemoutInt);
+			
+			True();
+		};
+	commJs.onerror=function(){
+			if(isTimeout){
+				return;
+			};
+			clearTimeout(tiemoutInt);
+			False();
+		};
+	var tiemoutInt=setTimeout(function(){
+			commJs.onerror();
+			isTimeout=true;
+		},8000);
+	commJs.setAttribute("type","text/javascript");
+	commJs.setAttribute("src","comm.js"+updateParam);
+	document.querySelector("head").appendChild(commJs);
+};
+
+function fail(msg,call,notViewBtn,notViewWifi){
+	document.body.style.background=defBG;
+	
+	firstElem.style.display="none";
+	failElem.style.display="block";
+	
+	document.querySelector(".fail .tips").innerHTML=msg||"出现未知错误";
+	
+	document.querySelector(".fail .reloadBtn").onclick=function(){
+					document.body.style.background=null;
+					call?call():load();
+				};
+	document.querySelector(".fail .reload").style.display=notViewBtn?"none":"block";
+	
+	document.querySelector(".fail .img").style.display=notViewWifi?"none":"block";
+};
+function viewLoad(msg){
+	document.querySelector(".first .tips").innerHTML=msg;
+	firstElem.style.display="block";
+	failElem.style.display="none";
+};
+
+
+
+
+
+
+function load(){
+	var network=AppRequest.getNetworkType();
+	console.log("network:"+network);
+	if(!network){
+		fail("网络连接未打开，请打开后再试");
+		return;
+	};
+	
+	var initSuccess=function(){
+		console.log("initSuccess "+PageIdentify);
+		location.href=GetAppInitUrl()+"?"+CacheMode.ON+location.hash;
+	};
+	
+	var startCount=AppRequest.getVersionStartCount();
+	var LM=AppRequest.getLastModified();
+	console.log("startCount:"+startCount+" LastModified:"+LM);
+	if(startCount && LM>0){
+		//启动过了 并且缓存假设有效
+		initSuccess();
+		return;
+	};
+	
+	//数据更新后第一次启动
+	viewLoad("准备数据，请稍后...");
+	
+	document.body.style.background=defBG;
+	
+	var firstInit=function(){
+		initCache.onload=function(){initSuccess();};
+		initCache.onerror=function(){fail("连接服务器失败，请检查网络是否打开");};
+		initCache.src=GetAppInitUrl()+"?"+CacheMode.Update;
+	};
+	
+	var appLM=AppRequest.getLastModified();
+	if(!appLM){
+		/*数据更新后设置更新时间*/
+		console.log("FirstRun setLastModified:Load Config");
+		Load({
+				url:GetAppConfigHref()
+				,check:false
+				,True:function(data){
+					if(data.status=="success"){
+						var config=data.value;
+						var LM=config.LastModified;
+						AppRequest.setLastModified(LM);
+						console.log("FirstRun setLastModified:Success:"+LM);
+						firstInit();
+					}else{
+						fail(data.message);
+					};
+				}
+				,False:function(msg){
+					fail("启动失败：无法获取状态信息");
+				}
+			});
+	}else{
+		firstInit();
+	};
+};
+
+
+
+
+
+
+var canStart=true;
+
+if(/[#&]error=([^&]*)/.test(decodeURIComponent(location.hash))){
+	var data={};
+	try{
+		data=JSON.parse(RegExp.$1);
+	}catch(e){};
+	
+	canStart=false;
+	
+	loadJs(function(){
+			var end=function(){
+				viewLoad("加载中...");
+			};
+			
+			fail(data.message||"请求失败，请重试",function(){
+					end();
+					location.href=data.url||thisUrl;
+				},false,true);
+		},function(){
+			fail("出现异常，请尝试重启应用","",true,true);
+		});
+};
+
+if(canStart){
+	//更新comm.js
+	var commJsUpdateSuccess=function(){
+		initCache.onload=function(){updateSuccess=true;};
+		initCache.onerror=function(){updateSuccess=true;};
+		initCache.src=GetAppInitUrl()+updateParam;
+	};
+	loadJs(function(){
+			if(isUpdate){
+				commJsUpdateSuccess();
+				return;
+			};
+			load();
+		},function(){
+			if(isUpdate){
+				commJsUpdateSuccess();
+				return;
+			};
+			fail("启动失败：资源无法读取");
+		});
+};
+</script>
+<script>
+//测试模式
+(function(){
+	var t=0,c=0,elem;
+	document.body.addEventListener("touchstart",function(e){
+			if(window.AppRequest&&!AppRequest.getStorage("CmdSharedApiTest")){
+				return;
+			};
+			var n=new Date().getTime();
+			if(elem==e.target&&n-t<500){
+				c++;
+				if(c>=10){
+					c=0;
+					try{
+						AppRequest.tips("已进入测试模式");
+					}catch(e){};
+					location.href="/m/apitest.asp";
+				};
+			}else{
+				elem=e.target;
+				c=1;
+			};
+			t=n;
+		},false);
+})();
+</script>
+
+</body>
+</html>

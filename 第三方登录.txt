@@ -1,0 +1,102 @@
+
+
+微信登录流程：
+
+	移动端
+
+	1,授权
+	通过scope授权域拉起授权界面。用户同意返回换取access_token的code。	
+	
+	iOS：
+	 //构造SendAuthReq结构体 
+    	SendAuthReq* req =[[[SendAuthReq alloc ] init ] autorelease ];
+	req.scope = @“授权域” ;
+    	req.state = @“可以自己设置的唯一标示” ;
+    	//第三方向微信终端发送一个SendAuthReq消息结构
+	[WXApi sendReq:req];
+	
+	Android：
+	// 发送结构体
+   	 Final SendAuth.Req req = new SendAuth.Req();
+    	req.scope = “授权域”;
+   	req.state = “自己设置的唯一标示”;
+    	api.sendReq(req); 
+
+	2，通过code换取接口调用凭证access_token.
+	get请求：
+	https://api.weixin.qq.com/sns/oauth2/access_token?appid=APP标示&secret=应用密钥&code=授权的CODE&grant_type=authorization_code
+	接口返回：
+		access_token	接口调用凭证
+		expires_in	access_token接口调用凭证超时时间，单位（秒）
+		refresh_token	用户刷新access_token
+		openid	授权用户唯一标识
+		scope	用户授权的作用域，使用逗号（,）分隔
+		unionid	 当且仅当该移动应用已获得该用户的userinfo授权时，才会出现该字段
+
+
+	注意：超过凭证时间后，使用refresh_token重新请求接口凭证
+	get请求：
+	https://api.weixin.qq.com/sns/oauth2/refresh_token?appid=App标示&grant_type=refresh_token&refresh_token=获取的refresh_token
+
+
+	3，获取用户信息
+	get请求：
+	https://api.weixin.qq.com/sns/userinfo?access_token=获取的接口凭证&openid=授权用户唯一标示
+	返回个人信息
+	
+	4，服务端验证：
+	get请求：
+	https://api.weixin.qq.com/sns/auth?access_token=获取的接口调用凭证&openid=授权用户唯一标示	
+	返回json结果
+	
+
+
+支付宝登录流程：
+
+	客户端：
+	调用支付授权接口，拉起授权页面，用户授权成功
+
+	返回值：auth_code，result_code，user_id
+
+	服务端：
+
+	通过得到客户端返回值，调用
+	AlipaySystemOauthTokenRequest request =newAlipaySystemOauthTokenRequest();//创建	API对应的request类
+	request.setGrantType(code类型);值为authorization_code时，代表用code换取；值为refresh_token时，代表用refresh_token换取
+	request.setCode(获取的code);
+	
+	返回值：user_id  支付宝用户的唯一userid
+		access_token 授权接口
+	
+	服务器获取个人信息:
+
+	AlipayUserUserinfoShareRequest request = new AlipayUserUserinfoShareRequest();//创建API对应的request类
+	AlipayUserUserinfoShareResponse response = alipayClient.execute(request, 	access_token);//在请求方法中传入上一步获得的access_token
+	
+
+	
+新浪微博登录流程：
+	客户端采用SSO授权
+	1,注册appkey
+	2,微博客户端授权认证。返回access_Token,userID
+	3,通过返回值请求信息
+	服务端验证接口：
+	post请求：
+	https://api.weibo.com/oauth2/get_token_info
+	
+	请求参数：
+	access_token：用户授权时生成的access_token。
+	返回值授权参数
+	 {
+       "uid": 1073880650,
+       "appkey": 1352222456,
+       "scope": null,
+       "create_at": 1352267591,
+       "expire_in": 157679471
+ 	}
+	
+腾讯qq登录流程：
+	客户端
+	1,注册appkey
+		
+	

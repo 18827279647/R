@@ -1,0 +1,50 @@
+//
+//  oaythClass.h
+//  你点我帮
+//
+//  Created by admin on 2017/12/1.
+//  Copyright © 2017年 zhaoyaqun. All rights reserved.
+//
+
+#import <Foundation/Foundation.h>
+
+//qq
+#import <TencentOpenAPI/TencentOAuth.h>
+#import <TencentOpenAPI/TencentApiInterface.h>
+
+//wexin
+#import "WXApi.h"
+
+//weibo
+#import "WeiboSDK.h"
+#import <UMSocialCore/UMSocialCore.h>
+
+#import "Config.h"
+
+@interface oaythClass : NSObject<TencentSessionDelegate>
+
+@property(nonatomic,strong)TencentOAuth*tencentOauth;
+@property(nonatomic,assign)int type;
+
+
++(oaythClass*)getoaythClass;
+
+-(void)getoauthQQ:(NSMutableArray*)array;
+
+-(void)getoauthWeixin:(NSMutableArray*)array;
+
+-(void)getoauthWeibo:(NSMutableArray*)array;
+
+-(void)getoauthAlipayVer;
+
+-(void)getoauthTaobao;
+
+
+
+//返回回调
+-(void)returndic:(NSMutableDictionary*)dic Success:(NSString*)success Message:(NSString*)message Notification:(NSString*)notioc;
+
+//区分原生请求和友盟请求回调
+-(int)returnBoolUrl;
+-(void)removeBoolUrl;
+@end

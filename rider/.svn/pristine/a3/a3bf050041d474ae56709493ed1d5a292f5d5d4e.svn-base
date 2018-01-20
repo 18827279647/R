@@ -1,0 +1,176 @@
+//
+//  oaythClass.m
+//  你点我帮
+//
+//  Created by admin on 2017/12/1.
+//  Copyright © 2017年 zhaoyaqun. All rights reserved.
+//
+
+#import "oaythClass.h"
+#import "Unit.h"
+
+@implementation oaythClass
+
++(oaythClass*)getoaythClass{
+    
+    static oaythClass *oayth = nil;
+    static dispatch_once_t predicate;
+    dispatch_once(&predicate, ^{
+        
+        oayth= [[self alloc] init];
+        
+    });
+    return oayth;
+}
+-(void)getoauthQQ:(NSMutableArray*)array;{
+    
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"oauthQQNotification" object:nil];
+    self.type=3;
+    if ([TencentOAuth iphoneQQInstalled]) {
+        self.tencentOauth = [[TencentOAuth alloc] initWithAppId:[Config GetUMQQID] andDelegate:self];
+        [self.tencentOauth authorize:array];
+    }else{
+        //调用返回
+        [self returndic:nil Success:@"fail" Message:@"用户未安装" Notification:@"oauthQQNotification"];
+    }
+   
+}
+
+
+
+#pragma mark -- TencentSessionDelegate
+/**
+ * 登录成功后的回调
+ */
+- (void)tencentDidLogin;{
+    
+    NSMutableDictionary*dic=[[NSMutableDictionary alloc]init];
+    
+    //数据
+    [Unit setDic:dic key:@"access_token" value:self.tencentOauth.accessToken];
+    [Unit setDic:dic key:@"expirationDate" value:[NSNumber numberWithLongLong:[Unit longLongFromDate:self.tencentOauth.expirationDate]]];
+    [Unit setDic:dic key:@"openId" value:self.tencentOauth.openId];
+    [Unit setDic:dic key:@"redirectURI" value:self.tencentOauth.redirectURI];
+    [Unit setDic:dic key:@"appId" value:self.tencentOauth.appId];
+    [Unit setDic:dic key:@"uin" value:self.tencentOauth.uin];
+    [Unit setDic:dic key:@"skey" value:self.tencentOauth.skey];
+    [Unit setDic:dic key:@"passData" value:self.tencentOauth.passData];
+  
+    
+    //调用返回
+    [self returndic:dic Success:@"success" Message:@"" Notification:@"oauthQQNotification"];
+}
+/**
+ * 登录失败后的回调
+ * \param cancelled 代表用户是否主动退出登录
+ */
+- (void)tencentDidNotLogin:(BOOL)cancelled;
+{
+    if (cancelled) {
+        //调用返回
+        [self returndic:nil Success:@"cancel" Message:@"用户取消授权" Notification:@"oauthQQNotification"];
+    }
+}
+/**
+ * 登录时网络有问题的回调
+ */
+- (void)tencentDidNotNetWork;
+{
+    //调用返回
+    [self returndic:nil Success:@"fail" Message:@"网络故障" Notification:@"oauthQQNotification"];
+}
+
+
+
+
+
+//返回回调
+-(void)returndic:(NSMutableDictionary*)dic Success:(NSString*)success Message:(NSString*)message Notification:(NSString*)notioc{
+    
+    if (dic.count==0) {
+        dic=[[NSMutableDictionary alloc]init];
+    }
+    [dic setObject:success forKey:@"success"];
+    [dic setObject:message forKey:@"message"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:notioc object:dic];
+}
+
+
+
+
+
+
+
+
+
+-(void)getoauthWeixin:(NSMutableArray*)array;{
+    
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"oauthWeixinNotification" object:nil];
+    self.type=1;
+    if ([WXApi isWXAppInstalled]) {
+        SendAuthReq *req = [[SendAuthReq alloc] init];
+        req.state = @"App";
+        if (array.count==0) {
+            req.scope = @"snsapi_userinfo";
+        }else{
+            req.scope=[array componentsJoinedByString:@","];
+        }
+         [WXApi sendReq:req];
+
+    }else{
+        //调用返回
+        [self returndic:nil Success:@"fail" Message:@"用户未安装" Notification:@"oauthWeixinNotification"];
+    }
+}
+
+
+
+
+
+
+
+-(void)getoauthWeibo:(NSMutableArray*)array;{
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"oauthWeiboNotification" object:nil];
+
+    WBAuthorizeRequest *request = [WBAuthorizeRequest request];
+    request.redirectURI =[Config GetUMSinaUrl];
+    self.type=2;
+    if (array.count==0) {
+        request.scope=@"";
+    }else{
+        request.scope =[array componentsJoinedByString:@","];
+    }
+    request.userInfo=nil;
+    [WeiboSDK sendRequest:request];
+
+}
+
+-(void)getoauthAlipayVer;{
+    
+}
+
+-(void)getoauthTaobao;{
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+//区分原生请求和友盟请求回调
+-(int)returnBoolUrl;
+{
+  return self.type;
+}
+
+-(void)removeBoolUrl;
+{
+    self.type=0;
+}
+@end

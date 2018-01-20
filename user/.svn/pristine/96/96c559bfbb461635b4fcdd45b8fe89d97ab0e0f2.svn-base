@@ -1,0 +1,703 @@
+//
+//  ViewController.m
+//  10-7
+//
+//  Created by zhaoyaqun on 15/10/7.
+//  Copyright (c) 2015年 zhaoyaqun. All rights reserved.
+//
+
+#import "ViewController.h"
+#import "QRCodeReaderViewController.h"
+#import "KeychainItemWrapper.h"
+#import "CheckNetwork.h"
+#import "SaveData.h"
+#import "AppDelegate.h"
+#import "SrocketViewController.h"
+#import "AppRequest.h"
+#import "Config.h"
+#import "ZBarSDK.h"
+#import "XDScaningViewController.h"
+#import "SendConnectionViewController.h"
+#import <Social/Social.h>
+#import "UMSocial.h"
+#import "WeiboSDK.h"
+#import <AVFoundation/AVFoundation.h>
+#import "Request.h"
+#import "Unit.h"    
+#define WIDTH [UIScreen mainScreen].bounds.size.width
+#define HEIGHT [UIScreen mainScreen].bounds.size.height
+
+static NSString*Url=nil;
+static NSString*Image=nil;
+static NSString*ContentStr=nil;
+static NSString*Thther=nil;
+
+static NSInteger ShareTag=0;
+
+static bool shakeType=false;
+
+static NSString*CrashCatcher=@"";
+
+
+@interface ViewController ()<UIWebViewDelegate,UIGestureRecognizerDelegate,NSStreamDelegate,QRCodeReaderDelegate,ZBarReaderDelegate>
+{
+    BOOL firstStart;
+    NSUserDefaults *UserDefaults;
+    NSTimer*timer;
+    UIImageView*lineview;
+}
+
+
+@property (nonatomic,strong)UIView *Shareview;
+@end
+
+@implementation ViewController
+
++ (ViewController*)viewControllerManager {
+    static ViewController *view = nil;
+    static dispatch_once_t predicate;
+    dispatch_once(&predicate, ^{
+        
+        view = [[self alloc] init];
+        
+    });
+    return view;
+}
+//在调用其他方法之前调用  修改WebView的userAgent
+-(void)initialize {
+    
+    NSString*uuidStr=[SaveData getUserAgent];
+    NSDictionary *dictionnary= [[NSDictionary alloc] initWithObjectsAndKeys:uuidStr, @"UserAgent", nil];
+    [SaveData setData:@"setuesrAgent" andValue:uuidStr];
+    [[NSUserDefaults standardUserDefaults] registerDefaults:dictionnary];
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [self initialize];
+    self.view.backgroundColor=[self getUiColor:@"23252D"];
+    
+    [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(potsbzcker:) name:@"viewchange" object:nil];
+
+    [self initWebview];
+    [self saveData];
+    [self gesture];
+    
+    //异常处理移到这里
+    [self CrashCatcher];
+    
+}
+-(void)CrashCatcher
+{
+    NSString*string=[SaveData getData:@"CrashCatcher"];
+    
+    CrashCatcher=string;
+    if (![string isEqualToString:@""])
+        {
+            //发起异步post请求
+        NSURL*url=[NSURL URLWithString:[NSString stringWithFormat:@"%@/api/appcrash",[Config GetHttpsHostUrl]]];
+        NSMutableURLRequest*request=[[NSMutableURLRequest alloc]initWithURL:url];
+        [request setHTTPMethod:@"POST"];
+        
+        NSString*set=[SaveData getData:@"setuesrAgent"];
+        if ([set isEqualToString:@""]){
+                //获取UserAgent
+            set=[SaveData getUserAgent];
+        }
+        [request addValue:set forHTTPHeaderField:@"User-Agent"];
+        
+            //数据
+        NSString*crash=[NSString stringWithFormat:@"action=crash&crash=%@",[string stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
+        NSData*crashData=[crash dataUsingEncoding:NSUTF8StringEncoding];
+        [request setHTTPBody:crashData];
+        
+            //第三步，连接服务器
+        NSURLConnection *connection = [[NSURLConnection alloc]initWithRequest:request delegate:self];
+        [connection start];
+            //清空
+        [SaveData getRemove:@"CrashCatcher"];
+        
+        }
+    [[SrocketViewController Instance]Init];
+}
+
+
+//接收到服务器传输数据的时候调用，此方法根据数据大小执行若干次
+-(void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
+{
+    
+    NSString*string=[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding];
+    NSMutableDictionary*dic=[Unit ParseJSONObject:string];
+    NSString*status=[dic objectForKey:@"status"];
+    if ([status isEqualToString:@"success"])
+        {
+        
+        NSString*EventData=[SaveData getData:@"EventData"];
+        
+        [SaveData setData:EventData andValue:CrashCatcher];
+        
+        CrashCatcher=@"";
+        }
+}
+    //网络请求过程中，出现任何错误（断网，连接超时等）会进入此方法
+-(void)connection:(NSURLConnection *)connection
+ didFailWithError:(NSError *)error
+{
+    
+    NSLog(@"网络请求过程中，出现任何错误（断网，连接超时等");
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-(void)webViewDidFinishLoad:(UIWebView *)webView
+{
+    [self.webview stringByEvaluatingJavaScriptFromString:@"document.documentElement.style.webkitUserSelect='none';"];
+    
+    [self.webview stringByEvaluatingJavaScriptFromString:@"document.documentElement.style.webkitTouchCallout='none';"];
+        [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(myNotifications:) name:@"myNotifications" object:nil];
+    
+}
+-(void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    
+    [[UIApplication sharedApplication]setStatusBarHidden:NO];
+     [[UIApplication sharedApplication]setStatusBarStyle:UIStatusBarStyleLightContent];
+
+}
+-(void)potsbzcker:(NSNotification*)not
+{
+    
+    NSString*banvker=[not object];
+      if (![banvker isEqualToString:@""])
+    {
+        //NSString *jsString = [[NSString alloc] initWithFormat:@"document.getElementsByTagName('body')[0].style.background='#%@'",banvker];
+        //[_webview stringByEvaluatingJavaScriptFromString:jsString];
+}
+   
+}
+
+
+
+-(void)initWebview
+{
+    // 外部view的大小
+    _webview = [[UIWebView alloc] initWithFrame:CGRectMake(0,20, self.view.frame.size.width, self.view.frame.size.height-15)];
+
+    [[UIApplication sharedApplication]setApplicationSupportsShakeToEdit:YES];
+    //解档
+    UserDefaults=[NSUserDefaults standardUserDefaults];
+    //默认颜色
+    NSString*string=[UserDefaults stringForKey:@"setStartBackgrond"];
+    //字符为空也是这个
+    if ([string isEqualToString:@""]||string==nil) {
+        [_webview setBackgroundColor:[self getUiColor:[Config GetStartBackgroundColor]]];
+        //关掉外部view的默认颜色
+        [_webview setOpaque:NO];
+        _webview.scalesPageToFit =YES;
+        //_webview.scrollView.alwaysBounceHorizontal = YES;
+        _webview.scrollView.backgroundColor=[UIColor whiteColor];
+        _webview.scrollView.bounces = NO;
+        _webview.scrollView.scrollEnabled = NO;
+        _webview.delegate =self;
+    }
+    else
+    {
+        //调用方法
+        [_webview setBackgroundColor:[self getUiColor:string]];
+        //关掉外部view的默认颜色
+        [_webview setOpaque:NO];
+        _webview.scalesPageToFit =YES;
+        //_webview.scrollView.alwaysBounceHorizontal = YES;
+        _webview.scrollView.backgroundColor=[UIColor whiteColor];
+        _webview.scrollView.bounces = NO;
+        _webview.scrollView.scrollEnabled = NO;
+        _webview.delegate =self;
+    }
+
+    [self loadRequest:self.launchOptionsType];
+    
+    [self.view addSubview:self.webview];
+    
+}
+-(void)launchOptions:(NSMutableDictionary*)data
+{
+    NSMutableDictionary*dic=[[NSMutableDictionary alloc]init];
+        //远程推送
+    if (data.count!=0) {
+        
+        int lastID=[[data objectForKey:@"x_i"]intValue];
+            //类型
+        int x_tt=[[data objectForKey:@"x_tt"]intValue];
+        
+        NSString*type=@"";
+        if (x_tt==1) {//系统信息
+            type=@"EventSystemLastID";
+        }else if(x_tt==2){//用户信息
+            type=@"EventUserLastID";
+        }else if (x_tt==3){//聊天信息
+            type=@"EventChatLastID";
+        }
+        lastID=lastID>[[SaveData getData:type]intValue]?lastID:[[SaveData getData:type]intValue];
+//            //保存那个最大值
+        [SaveData setData:type andIntValue:lastID];
+        
+            //构造字典
+        [dic setObject:data forKey:@"PushData"];
+        
+    }else{
+        
+        dic=data;
+    }
+    [SaveData setData:@"EventClickData" andValue:[Unit FormatJSONObject:dic]];
+
+    self.launchOptionsType=true;
+}
+
+-(void)loadRequest:(bool)type
+{
+    [Config setHttp:@"http"];
+    
+    //新增判断方法
+    NSMutableURLRequest *request=nil;
+    if (type) {
+        request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@#event=Click",[Config GetBaseUrl]]]];
+    }else{
+        request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[Config GetBaseUrl]]];
+    }
+    
+    [_webview loadRequest:request];
+    
+    [Request getHttp:^(bool http){
+        
+        if (http) {
+                //NOOP
+        }else{
+                //回到主线程
+            dispatch_async(dispatch_get_main_queue(), ^{
+                    //打开系统浏览器
+                [[UIApplication sharedApplication] openURL:[NSURL URLWithString:[Config GetBaseUrl]]];
+                exit(0);
+                
+            });
+    }
+        
+    }];
+}
+
+-(void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+}
+
+- (BOOL)canBecomeFirstResponder {//默认是NO，所以得重写此方法，设成YES
+    return YES;
+}
+-(void)motionBegan:(UIEventSubtype)motion withEvent:(UIEvent *)event
+{
+
+        //检测到摇动开始
+    if (motion ==UIEventSubtypeMotionShake) {
+        
+        if (shakeType) {
+         
+              [[ViewController viewControllerManager]excode:[NSString stringWithFormat:@"AppRequest.Shake()"]];
+        }
+    
+    }
+    
+}
+- (void)motionCancelled:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    NSLog(@"取消摇动");
+    shakeType=false;
+    return;
+}
+-(void)openShake;
+{
+    if (!shakeType) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[ViewController viewControllerManager] becomeFirstResponder];
+        });
+    }
+    shakeType=true;
+    
+}
+-(void)closeShake;
+{
+    if (shakeType) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[ViewController viewControllerManager] resignFirstResponder];
+        });
+    }
+    shakeType=false;
+}
+
+
+
+
+
+
+
+
+
+
+//刷新webview
+-(void)reloadWbview
+{
+    [self loadRequest:self.launchOptionsType];
+}
+
+-(void)saveData
+{
+    NSLog(@"savadata");
+    
+    if (firstStart == NO)
+    {
+        NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
+        
+        NSString *version = @"version";
+        NSString *versionNumber = @"1.0";
+        //保存应用版本号
+        [defaults setObject:versionNumber forKey:version];
+        //保存api level
+        NSString *level = @"level";
+        NSString *levelNumber = @"1";
+        [defaults setObject:levelNumber forKey:level];
+        //启动时背景颜色字符串
+        NSString *background = @"StartBackgroundColor";
+        NSString *backgroundColor =[Config GetStartBackgroundColor];
+        [defaults setObject:backgroundColor forKey:background];
+        firstStart = YES;
+    }else
+    {
+        NSLog(@" no  firstStart");
+    }
+    
+}
+
+//扫描二维码
+-(void)GoZbarView
+{
+    
+   if(floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_7_1) {
+            // Pre iOS 8 -- No camera auth required.
+        [self Cramer];
+   }else {
+        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+        switch (status) {
+            case AVAuthorizationStatusNotDetermined:{
+                    // 许可对话没有出现，发起授权许可
+                
+                [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
+                    
+                    if (granted) {
+                            //第一次用户接受
+                        [self Cramer];
+                        
+                    }else{
+                            //用户拒绝
+                    [self.delegate passValue:false and:true and:@"无法初始化摄像头，可能被禁止了"];
+                    }
+                }];
+                break;
+            }
+            case AVAuthorizationStatusAuthorized:{
+                    // 已经开启授权，可继续
+                [self Cramer];
+                break;
+            }
+            case AVAuthorizationStatusDenied:
+            case AVAuthorizationStatusRestricted:
+                    // 用户明确地拒绝授权，或者相机设备无法访问
+                  [self.delegate passValue:false and:true and:@"无法初始化摄像头，可能被禁止了"];
+                break;
+            default:
+                [self.delegate passValue:false and:true and:@"未知错误"];
+                break;
+        }
+        
+    }
+
+}
+-(void)Cramer
+{
+    dispatch_queue_t queue=dispatch_get_main_queue();
+    dispatch_async(queue, ^{
+        
+      
+        XDScaningViewController *scanningVC = [[XDScaningViewController alloc]init];
+        scanningVC.backValue = ^(bool isBack,bool isError,NSString *scannedStr){
+            
+            NSLog(@"我是扫描结果%@",scannedStr);
+            
+            if (scannedStr)
+                {
+                if ([self.delegate respondsToSelector:@selector(passValue:and:and:)])
+                    {
+                    [self.delegate passValue:isBack and:isError and:scannedStr];
+                    }
+                
+                }
+            
+        };
+        [self presentViewController:scanningVC animated:YES completion:nil];
+    
+    });
+
+    
+}
+-(void)UIViewurl:(NSString*)url andimage:(NSString*)image andcontentStr:(NSString*)contentStr andtither:(NSString*)thther;
+{
+        //回到主线程
+    dispatch_async(dispatch_get_main_queue(), ^{
+        Url=url;
+        Image=image;
+        ContentStr=contentStr;
+        Thther=thther;
+        if (ShareTag==0) {
+            UIImageView*sharea=[[UIImageView alloc]initWithFrame:CGRectMake(0,0,WIDTH,1)];
+            sharea.backgroundColor=[UIColor grayColor];
+            sharea.alpha=0.4;
+            
+            self.Shareview =[[UIView alloc]initWithFrame:CGRectMake(0,HEIGHT-100,WIDTH,100)];
+            ShareTag=1;
+            [self.Shareview addSubview:sharea];
+            [self.view addSubview:self.Shareview];
+            self.Shareview.backgroundColor = [UIColor whiteColor];
+            
+            lineview = [[UIImageView alloc]initWithFrame:CGRectMake(0, 0, WIDTH,HEIGHT-100)];
+            lineview.backgroundColor = [UIColor clearColor];
+            lineview.alpha=1;
+            lineview.userInteractionEnabled=YES;
+            [self.view addSubview:lineview];
+            UITapGestureRecognizer*tapGestuer=[[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(goShareView:)];
+            [lineview addGestureRecognizer:tapGestuer];
+            
+            NSArray *titleArray = @[@"logo_sinaweibo",@"logo_wechat",@"logo_wechatmoments",@"logo_qzone",@"umeng_socialize_qq_on.png"];
+            NSArray *titlelabel = @[@"新浪微博",@"微信好友",@"微信朋友圈",@"QQ空间",@"QQ好友"];
+            
+            for (int i = 0; i<5; i++)
+                {
+                
+                UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+                button.frame = CGRectMake(i*WIDTH/5, 0, WIDTH/5, WIDTH/5);
+                [button addTarget:self action:@selector(share:) forControlEvents:UIControlEventTouchUpInside];
+                button.tag=i;
+                [self.Shareview addSubview:button];
+                
+                UIImageView *iv = [[UIImageView alloc]initWithFrame:CGRectMake((WIDTH/5-44)/2, 15,44,44)];
+                iv.image = [UIImage imageNamed:titleArray[i]];
+                [button addSubview:iv];
+                
+                iv.userInteractionEnabled = NO;
+                
+                UILabel *label = [[UILabel alloc]initWithFrame:CGRectMake(0, CGRectGetMaxY(iv.frame)+5, WIDTH/5, 20)];
+                label.text =titlelabel[i];
+                label.textAlignment =1;
+                label.font =[UIFont systemFontOfSize:10];
+                [button addSubview:label];
+                
+                label.userInteractionEnabled= YES;
+                
+                }
+            }
+        });
+}
+-(void)share:(UIButton*)button
+{
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:Image]];
+    
+    NSData *imageData = [SendConnectionViewController sendRequest:request];
+    UIImage *image = [UIImage imageWithData:imageData];
+    NSString*name=@"";
+    NSString *snsName=@"";
+    if (button.tag==0)
+        {
+            snsName =UMShareToSina;
+            name=@"新浪微博";
+            [UMSocialData defaultData].extConfig.title =Thther;
+            [[UMSocialDataService defaultDataService] postSNSWithTypes:@[snsName] content:[NSString stringWithFormat:@"%@ %@",ContentStr,Url] image:image location:nil urlResource:nil presentedController:self completion:^(UMSocialResponseEntity * response){
+                if (response.responseCode == UMSResponseCodeSuccess){
+                    [[NSNotificationCenter defaultCenter]postNotificationName:@"shareGetUMSocial" object:name];
+                }else if(response.responseCode== UMSResponseCodeCancel) {
+                        //取消分享
+                    [[NSNotificationCenter defaultCenter]postNotificationName:@"CancelGetUMSocial" object:name];
+                }else{
+                        //分享失败
+                    [[NSNotificationCenter defaultCenter]postNotificationName:@"FinishGetUMSocial" object:name];
+                }
+        }];
+        [self goShareView:button];
+        return;
+
+        }else if(button.tag==1){
+            snsName = UMShareToWechatSession;
+            name=@"微信";
+            [UMSocialData defaultData].extConfig.wechatSessionData.url=Url;
+            [UMSocialData defaultData].extConfig.title =Thther;
+        }else if(button.tag==2){
+            snsName = UMShareToWechatTimeline;
+            name=@"微信朋友圈";
+            [UMSocialData defaultData].extConfig.wechatTimelineData.url=Url;
+            [UMSocialData defaultData].extConfig.title =Thther;
+       
+        }else if(button.tag==3){
+            snsName =UMShareToQzone;
+            name=@"QQ空间";
+            [UMSocialData defaultData].extConfig.qzoneData.url=Url;
+            [UMSocialData defaultData].extConfig.title =Thther;
+        }else if(button.tag==4){
+            name=@"qq";
+            snsName =UMShareToQQ;
+            [UMSocialData defaultData].extConfig.qqData.url=Url;
+            [UMSocialData defaultData].extConfig.title =Thther;
+        }
+    [[UMSocialDataService defaultDataService] postSNSWithTypes:@[snsName] content:ContentStr image:image location:nil urlResource:nil presentedController:self completion:^(UMSocialResponseEntity * response){
+        if (response.responseCode == UMSResponseCodeSuccess){
+            [[NSNotificationCenter defaultCenter]postNotificationName:@"shareGetUMSocial" object:name];
+        }else if(response.responseCode== UMSResponseCodeCancel) {
+            //取消分享
+            [[NSNotificationCenter defaultCenter]postNotificationName:@"CancelGetUMSocial" object:name];
+        }else{
+            //分享失败
+            [[NSNotificationCenter defaultCenter]postNotificationName:@"FinishGetUMSocial" object:name];
+        }
+    }];
+    [self goShareView:button];
+}
+-(void)goShareView:(id)button;
+{
+    if ([button isKindOfClass:[UITapGestureRecognizer class]]) {
+        
+        [[NSNotificationCenter defaultCenter]postNotificationName:@"FinishQuxiao" object:nil];
+
+    }
+    
+    [UIView animateWithDuration:0.5 animations:^{
+        CGRect frame = self.Shareview.frame;
+        frame.origin.y  =HEIGHT ;
+        self.Shareview.frame = frame;
+        lineview.frame=frame;
+        ShareTag=0;
+        
+    }];
+}
+
+
+//二维码扫描返回请求js
+-(void)excode:(NSString *)code
+{
+    
+    dispatch_queue_t queue=dispatch_get_main_queue();
+    dispatch_async(queue, ^{
+        
+        [[ViewController viewControllerManager].webview stringByEvaluatingJavaScriptFromString:code];
+    });
+    
+}
+
+#pragma mark - QRCodeReader Delegate Methods
+
+- (void)reader:(QRCodeReaderViewController *)reader didScanResult:(NSString *)result
+{
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)readerDidCancel:(QRCodeReaderViewController *)reader
+{
+    [self dismissViewControllerAnimated:YES completion:NULL];
+}
+
+//16进制颜色转化
+-(UIColor*)getUiColor:(NSString*)hexColorString;
+{
+    unsigned int red,green,blue;
+    //切割字符
+    NSRange range;
+    //长度2
+    range.length=2;
+    //从0位开始
+    range.location=0;
+    //获得红色
+    [[NSScanner scannerWithString:[hexColorString substringWithRange:range]]scanHexInt:&red];
+    //获得绿色
+    range.location=2;
+    [[NSScanner scannerWithString:[hexColorString substringWithRange:range]]scanHexInt:&green];
+    //获得蓝色
+    range.location=4;
+    [[NSScanner scannerWithString:[hexColorString substringWithRange:range]]scanHexInt:&blue];
+    return [UIColor colorWithRed:(float)(red/255.0f) green:(float)(green/255.0f) blue:(float)(blue/255.0f) alpha:1.0f];
+}
+
+-(void)gesture
+{
+
+}
+
+#pragma mark - GestureRecognizerDelegate
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
+{
+    return NO;
+}
+
+-(void)dealloc
+{
+    [super dealloc];
+
+    [[NSNotificationCenter defaultCenter]removeObserver:self name:@"viewchange" object:nil];
+
+}
+- (void)didReceiveMemoryWarning {
+    [super didReceiveMemoryWarning];
+    
+}
+//新增点击通知栏保存处理
+-(void)myNotifications:(NSNotification*)data
+{
+        NSMutableDictionary*pushData=[Unit JSONObject:data.object key:@"PushData"];
+        NSMutableDictionary*dic=[[NSMutableDictionary alloc]init];
+            //远程推送
+        if (pushData.count==0) {
+            
+            int lastID=[Unit JSONInt:data.object key:@"x_i"];
+                //类型
+            int x_tt=[Unit JSONInt:data.object key:@"x_tt"];
+            
+            NSString*type=@"";
+            if (x_tt==1) {//系统信息
+                type=@"EventSystemLastID";
+            }else if(x_tt==2){//用户信息
+                type=@"EventUserLastID";
+            }else if (x_tt==3){//聊天信息
+                type=@"EventChatLastID";
+            }
+            lastID=lastID>[[SaveData getData:type]intValue]?lastID:[[SaveData getData:type]intValue];
+                //保存那个最大值
+            [SaveData setData:type andIntValue:lastID];
+            
+                //构造字典
+            [dic setObject:data.object forKey:@"PushData"];
+            
+        }else{
+            
+            dic=data.object;
+        }
+        [SaveData setData:@"EventClickData" andValue:[Unit FormatJSONObject:dic]];
+
+        //回调或者说是通知主线程刷新，
+        [[ViewController viewControllerManager] excode:@"AppRequest.Event()"];
+        [[NSNotificationCenter defaultCenter]removeObserver:self name:@"myNotifications" object:nil];
+}
+@end
